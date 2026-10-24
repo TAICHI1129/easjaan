@@ -14,60 +14,58 @@ permissions:
 jobs:
   update-articles:
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Generate article data
-        shell: bash
+      - name: Generate article index
         run: |
-          python3 - <<'PY'
+          python3 <<'PY'
           import json
           import re
           from pathlib import Path
           from urllib.parse import quote
 
-          directory = Path("articles")
-          entries = []
+          article_dir = Path("articles")
+          output_file = Path("data/articles.json")
+          output_file.parent.mkdir(parents=True, exist_ok=True)
 
-          for path in directory.glob("*.html"):
-              match = re.fullmatch(r"(\d+)\|(.+)\.html", path.name)
+          pattern = re.compile(r"^(\d+)\|(.+)\.html$")
+
+          articles = []
+
+          for file in article_dir.glob("*.html"):
+              match = pattern.match(file.name)
+
               if not match:
                   continue
 
               number = int(match.group(1))
               title = match.group(2)
-              encoded_name = quote(path.name, safe="!().-_")
 
-              entries.append({
+              articles.append({
                   "number": number,
                   "title": title,
-                  "path": f"../articles/{encoded_name}"
+                  "path": "./" + quote(file.name, safe="!().-_")
               })
 
-          entries.sort(key=lambda item: item["number"])
+          articles.sort(key=lambda article: (article["number"], article["title"].casefold()))
 
-          Path("data").mkdir(exist_ok=True)
-          output = [
-              {"title": item["title"], "path": item["path"]}
-              for item in entries
-          ]
-
-          Path("data/articles.json").write_text(
-              json.dumps(output, ensure_ascii=False, indent=2) + "\n",
+          output_file.write_text(
+              json.dumps(articles, ensure_ascii=False, indent=2) + "\n",
               encoding="utf-8"
           )
           PY
 
-      - name: Commit updated article data
+      - name: Commit updated index
         run: |
-          if git diff --quiet -- data/articles.json; then
-            echo "Article data is already up to date."
+          git add data/articles.json
+          if git diff --cached --quiet; then
+            echo "Article index is already up to date."
             exit 0
           fi
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/articles.json
-          git commit -m "Update generated article index"
+          git commit -m "Update article index"
           git push
